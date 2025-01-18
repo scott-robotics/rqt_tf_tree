@@ -49,26 +49,29 @@ class DotcodeGeneratorTest(unittest.TestCase):
                                         'buffer_length': 'fr_buffer_length',
                                         'most_recent_transform': 'fr_most_recent_transform',
                                         'oldest_transform': 'fr_oldest_transform',}}
-        frameClientMock = Mock()
-        frameClientMock.call.return_value.frame_yaml = str(yaml_data)
+        tfHandlerMock = Mock()
+        tfHandlerMock.get_graph.return_value = yaml_data
+        tfHandlerMock.lookup_transform_as_string.return_value = "Transform: "
 
         factoryMock = Mock()
         graphMock = Mock()
         timerMock = Mock()
         timerMock.now.return_value.nanoseconds = 42
 
-        yamlmock = Mock()
-        yamlmock.load.return_value = yaml_data
-
         factoryMock.create_dot.return_value = "foo"
         factoryMock.get_graph.return_value = graphMock
 
         gen = RosTfTreeDotcodeGenerator(0)
-        graph = gen.generate_dotcode(factoryMock, frameClientMock, timerMock)
+        graph = gen.generate_dotcode(factoryMock, tfHandlerMock, timerMock)
 
         timerMock.now.assert_called_with()
         factoryMock.create_dot.assert_called_with(graphMock)
+        tfHandlerMock.lookup_transform_as_string.assert_not_called()
+        self.assertEqual(graph, 'foo')
 
+        gen = RosTfTreeDotcodeGenerator(0)
+        graph = gen.generate_dotcode(factoryMock, tfHandlerMock, timerMock, show_transforms=True)
+        tfHandlerMock.lookup_transform_as_string.assert_called()
         self.assertEqual(graph, 'foo')
 
 

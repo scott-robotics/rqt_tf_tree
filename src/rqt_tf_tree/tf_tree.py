@@ -34,9 +34,6 @@ import os
 
 from ament_index_python import get_resource
 
-from tf2_msgs.srv import FrameGraph
-import tf2_ros
-
 from python_qt_binding import loadUi
 from python_qt_binding.QtCore import QFile, QIODevice, QObject, Qt, Signal
 from python_qt_binding.QtGui import QIcon, QImage, QPainter
@@ -48,6 +45,7 @@ from qt_dotgraph.dot_to_qt import DotToQtGenerator
 from rqt_graph.interactive_graphics_view import InteractiveGraphicsView
 
 from .dotcode_tf import RosTfTreeDotcodeGenerator
+from .tf_handler import RosTfHandler
 
 
 class RosTfTree(QObject):
@@ -61,6 +59,7 @@ class RosTfTree(QObject):
         self.setObjectName('RosTfTree')
 
         self._node = context.node
+        self._tf_handler = RosTfHandler(context.node)
 
         self._current_dotcode = None
 
@@ -71,8 +70,6 @@ class RosTfTree(QObject):
         # self.dotcode_factory = PygraphvizFactory()
         # generator builds rosgraph
         self.dotcode_generator = RosTfTreeDotcodeGenerator()
-        self.tf2_buffer_ = tf2_ros.Buffer(node=self._node)
-        self.tf2_listener_ = tf2_ros.TransformListener(self.tf2_buffer_, self._node)
 
         # dot_to_qt transforms into Qt elements using dot layout
         self.dot_to_qt = DotToQtGenerator()
@@ -89,13 +86,15 @@ class RosTfTree(QObject):
         self._widget.graphics_view.setScene(self._scene)
 
         self._widget.clear_buffer_push_button.setIcon(QIcon.fromTheme('edit-delete'))
-        self._widget.clear_buffer_push_button.pressed.connect(self._clear_buffer)
+        self._widget.clear_buffer_push_button.pressed.connect(self._tf_handler.clear_buffers)
 
         self._widget.refresh_graph_push_button.setIcon(QIcon.fromTheme('view-refresh'))
         self._widget.refresh_graph_push_button.pressed.connect(self._update_tf_graph)
 
         self._widget.highlight_connections_check_box.toggled.connect(self._redraw_graph_view)
         self._widget.auto_fit_graph_check_box.toggled.connect(self._redraw_graph_view)
+        self._widget.show_transform_check_box.toggled.connect(self._update_tf_graph)
+
         self._widget.fit_in_view_push_button.setIcon(QIcon.fromTheme('zoom-original'))
         self._widget.fit_in_view_push_button.pressed.connect(self._fit_in_view)
 
@@ -121,17 +120,18 @@ class RosTfTree(QObject):
                                     self._widget.auto_fit_graph_check_box.isChecked())
         instance_settings.set_value('highlight_connections_check_box_state',
                                     self._widget.highlight_connections_check_box.isChecked())
+        instance_settings.set_value('show_transform_check_box_state',
+                                    self._widget.show_transform_check_box.isChecked())
 
     def restore_settings(self, plugin_settings, instance_settings):
         self._widget.auto_fit_graph_check_box.setChecked(
             instance_settings.value('auto_fit_graph_check_box_state', True) in [True, 'true'])
         self._widget.highlight_connections_check_box.setChecked(
             instance_settings.value('highlight_connections_check_box_state', True) in [True, 'true'])
+        self._widget.show_transform_check_box.setChecked(
+            instance_settings.value('show_transform_check_box_state', False) in [False, 'false'])
         self.initialized = True
         self._refresh_tf_graph()
-
-    def _clear_buffer(self):
-        self.tf2_buffer_.clear()
 
     def _update_tf_graph(self):
         self._force_refresh = True
@@ -146,14 +146,12 @@ class RosTfTree(QObject):
         force_refresh = self._force_refresh
         self._force_refresh = False
 
-        tf2_frame_client = self._node.create_client(FrameGraph, 'tf2_frames')
-        while not tf2_frame_client.wait_for_service(timeout_sec=1.0):
-            print('service not available, waiting again...')
-
-        return self.dotcode_generator.generate_dotcode(dotcode_factory=self.dotcode_factory,
-                                                       tf2_frame_srv=tf2_frame_client,
-                                                       timer=self._node.get_clock(),
-                                                       force_refresh=force_refresh)
+        return self.dotcode_generator.generate_dotcode(
+            dotcode_factory=self.dotcode_factory,
+            tf2_handler=self._tf_handler,
+            timer=self._node.get_clock(),
+            force_refresh=force_refresh,
+            show_transforms=self._widget.show_transform_check_box.isChecked())
 
     def _update_graph_view(self, dotcode):
         if dotcode == self._current_dotcode:

@@ -92,6 +92,19 @@
      <!--   </property> -->
      <!--  </widget> -->
      <!-- </item> -->
+    <item>
+      <widget class="QCheckBox" name="show_transform_check_box">
+       <property name="toolTip">
+        <string>Show the translation and rotation for each Transform</string>
+       </property>
+       <property name="text">
+        <string>Show Transform</string>
+       </property>
+       <property name="checked">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
      <item>
       <widget class="QCheckBox" name="highlight_connections_check_box">
        <property name="toolTip">

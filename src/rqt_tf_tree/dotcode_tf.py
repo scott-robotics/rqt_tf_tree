@@ -36,7 +36,6 @@ import yaml
 
 from rclpy import clock
 from rclpy.constants import S_TO_NS
-from tf2_msgs.srv import FrameGraph
 
 
 class RosTfTreeDotcodeGenerator(object):
@@ -57,13 +56,14 @@ class RosTfTreeDotcodeGenerator(object):
 
     def generate_dotcode(self,
                          dotcode_factory,
-                         tf2_frame_srv,
+                         tf2_handler,
                          timer=rclpy.clock.Clock(),
                          yaml_parser=yaml,
                          rank='same',   # None, same, min, max, source, sink
                          ranksep=0.2,   # vertical distance between layers
                          rankdir='TB',  # direction of layout (TB top > bottom, LR left > right)
-                         force_refresh=False):
+                         force_refresh=False,
+                         show_transforms=False):
         """
         :param force_refresh: if False, may return same dotcode as last time
         """
@@ -94,14 +94,13 @@ class RosTfTreeDotcodeGenerator(object):
             # no need to listen more once we've listened for 1 sec?
             self.listen_duration = 0
 
-            yaml_data = tf2_frame_srv.call(FrameGraph.Request()).frame_yaml
-            data = yaml_parser.safe_load(yaml_data)
-            self.graph = self.generate(data, timer.now().nanoseconds / S_TO_NS)
+            data = tf2_handler.get_graph(yaml_parser)
+            self.graph = self.generate(data, tf2_handler, timer.now(), show_transforms)
             self.dotcode = self.dotcode_factory.create_dot(self.graph)
 
         return self.dotcode
 
-    def generate(self, data, timestamp):
+    def generate(self, data, tf2_handler, timestamp, show_transforms):
         graph = self.dotcode_factory.get_graph(rank=self.rank,
                                                rankdir=self.rankdir,
                                                ranksep=self.ranksep)
@@ -120,18 +119,26 @@ class RosTfTreeDotcodeGenerator(object):
             self.dotcode_factory.add_node_to_graph(
                 graph, frame_dict, shape='ellipse')
 
-            edge_label = '"Broadcaster: %s\\n' % str(tf_frame_values['broadcaster'])
+            edge_label = 'Broadcaster: %s\\n' % str(tf_frame_values['broadcaster'])
             edge_label += 'Average rate: %s\\n' % str(tf_frame_values['rate'])
             edge_label += 'Buffer length: %s\\n' % str(tf_frame_values['buffer_length'])
             edge_label += 'Most recent transform: %s\\n' % str(tf_frame_values['most_recent_transform'])
-            edge_label += 'Oldest transform: %s"' % str(tf_frame_values['oldest_transform'])
+            edge_label += 'Oldest transform: %s' % str(tf_frame_values['oldest_transform'])
+
+            if show_transforms:
+                tf = tf2_handler.lookup_transform_as_string(
+                    tf_frame_values['parent'],
+                    frame_dict,
+                    tf_frame_values['most_recent_transform'])
+                edge_label += '\\nTransform: %s' % str(tf)
+
             self.dotcode_factory.add_edge_to_graph(graph,
                                                    str(tf_frame_values['parent']),
                                                    frame_dict,
                                                    label=edge_label)
 
         # create legend before root node
-        legend_label = '"Recorded at time: %s"' % str(timestamp)
+        legend_label = '"Recorded at time: %s"' % str(timestamp.nanoseconds / S_TO_NS)
         self.dotcode_factory.add_node_to_graph(graph, legend_label)
         self.dotcode_factory.add_edge_to_graph(graph,
                                                legend_label,
